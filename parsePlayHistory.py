@@ -41,30 +41,40 @@ class URLBuilder(object):
 def print_result(userName, startDate=None, endDate=None, page=None):
 	url = URLBuilder("https://www.boardgamegeek.com/xmlapi2/plays")
 	url.addQueryArg("username", userName).addQueryArg("page", page)
-
+	responseTrees = []
+	requestTasks = []
 
 	recordDict = AggregatedPlays()
 	response = yield from aiohttp.request('GET', url.build())
 	xmlString = yield from response.read_and_close(decode=False)
-	tree = etree.fromstring(xmlString)
+	responseTrees.append(etree.fromstring(xmlString))
 
-	pageCount = math.ceil(int(tree.attrib.get("total"))/100)
+	# bgg api returns the total number of records and 100 records per page
+	pageCount = math.ceil(int(responseTrees[0].attrib.get("total"))/100)
 
-	for play in tree.findall('play'):
-		quantity = play.get("quantity")
-		name = play.find("item").get("name")
-		recordDict.insert(name, quantity)
+	for pageNumber in range(2, pageCount + 1):
+		taskURL = url.addQueryArg("page", pageNumber).build()
+		task = asyncio.async(get_single_page(taskURL))
+		requestTasks.append(task)
+
+	for pendingTree in asyncio.as_completed(requestTasks):
+		tree = yield from pendingTree
+		responseTrees.append(tree)
+
+	for tree in responseTrees:
+		for play in tree.findall('play'):
+			quantity = play.get("quantity")
+			name = play.find("item").get("name")
+			recordDict.insert(name, quantity)
 
 	for k, v in recordDict.getRecords():
 		print("{0}: {1}".format(k, v))
 
 @asyncio.coroutine
-def multi_request(url, pageCount):
-	"""
-	once the first page has returned the program can determine the remaining number
-	of pages.  This function will aggregate the remaining pages 2...n and add their
-	records to the AggregatedPlays object
-	"""
+def get_single_page(url):
+	response = yield from aiohttp.request('GET', url)
+	xmlString = yield from response.read_and_close(decode=False)
+	return etree.fromstring(xmlString)
 
 
 
