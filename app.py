@@ -4,9 +4,12 @@ from aiohttp import web
 import json
 
 from parsePlayHistory import get_play_history
-from parsePlayHistory import mainLoop
 
 def parseArgs(stringArgs):
+    """
+    takes a querystring "key=value&key2=value2..." and produces a dictionary.
+    if a key does not contain a value then the pair is not included in the return value.
+    """
     stringPairs = [arg.split("=") for arg in stringArgs.split("&")]
     filteredPairs = [pair for pair in stringPairs if len(pair) == 2]
     arguments = {k:v for k, v in filteredPairs}
