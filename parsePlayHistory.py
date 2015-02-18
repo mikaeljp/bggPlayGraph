@@ -39,16 +39,17 @@ class URLBuilder(object):
         return "?".join([self.baseURL, stringArgs])
 
 @asyncio.coroutine
-def print_result(username, startDate=None, endDate=None, pageLimit=None):
-    playRecord = yield from get_play_history(username, startDate, endDate, pageLimit)
+def print_result(**kwargs):
+    playRecord = yield from get_play_history(**kwargs)
     print(playRecord)
 
 @asyncio.coroutine
-def get_play_history(username, startdate=None, enddate=None, pagelimit=None):
+def get_play_history(**kwargs):
     url = URLBuilder("https://www.boardgamegeek.com/xmlapi2/plays")
-    url.addQueryArg("username", username)\
-        .addQueryArg("mindate", startdate)\
-        .addQueryArg("maxdate", enddate)
+    url.addQueryArg("username", kwargs.get("username"))\
+        .addQueryArg("mindate", kwargs.get("startdate"))\
+        .addQueryArg("maxdate", kwargs.get("enddate"))
+    pagelimit = kwargs.get("pagelimit")
     responseTrees = []
     requestTasks = []
 
@@ -60,7 +61,7 @@ def get_play_history(username, startdate=None, enddate=None, pagelimit=None):
     if pagelimit is not None:
         pageCount = min(
             math.ceil(int(responseTrees[0].attrib.get("total"))/100),
-            pageLimit)
+            int(pagelimit))
     else: 
         pageCount = math.ceil(int(responseTrees[0].attrib.get("total"))/100)
 
@@ -91,4 +92,4 @@ def get_single_page(url):
 
 if __name__ == "__main__":
     # loop = asyncio.get_event_loop()
-    mainLoop.run_until_complete(print_result("mikaeljp"))
+    mainLoop.run_until_complete(print_result({"username": "mikaeljp"}))
