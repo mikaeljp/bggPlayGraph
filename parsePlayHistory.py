@@ -39,14 +39,14 @@ class URLBuilder(object):
         return "?".join([self.baseURL, stringArgs])
 
 @asyncio.coroutine
-def print_result(userName, startDate=None, endDate=None, pageLimit=None):
-    playRecord = yield from get_play_history(userName, startDate, endDate, pageLimit)
+def print_result(username, startDate=None, endDate=None, pageLimit=None):
+    playRecord = yield from get_play_history(username, startDate, endDate, pageLimit)
     print(playRecord)
 
 @asyncio.coroutine
-def get_play_history(userName, startdate=None, enddate=None, pagelimit=None):
+def get_play_history(username, startdate=None, enddate=None, pagelimit=None):
     url = URLBuilder("https://www.boardgamegeek.com/xmlapi2/plays")
-    url.addQueryArg("username", userName)\
+    url.addQueryArg("username", username)\
         .addQueryArg("mindate", startdate)\
         .addQueryArg("maxdate", enddate)
     responseTrees = []
@@ -56,7 +56,6 @@ def get_play_history(userName, startdate=None, enddate=None, pagelimit=None):
     response = yield from aiohttp.request('GET', url.build())
     xmlString = yield from response.read_and_close(decode=False)
     responseTrees.append(etree.fromstring(xmlString))
-
     # bgg api returns the total number of records and 100 records per page
     if pagelimit is not None:
         pageCount = min(

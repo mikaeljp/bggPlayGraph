@@ -1,33 +1,42 @@
 #!bgg/bin/python3
-from flask import Flask
-from flask.ext import restful
-from flask.ext.restful import reqparse
 import asyncio
+from aiohttp import web
+import json
 
 from parsePlayHistory import get_play_history
 from parsePlayHistory import mainLoop
 
+def parseArgs(stringArgs, acceptedArgs):
+    argPairs = [arg.split("=") for arg in stringArgs.split("&")]
+    arguments = {}
+    for pair in argPairs:
+        if pair[0] in acceptedArgs:
+            if len(pair) == 1:
+                arguments[pair[0]] = None
+            else:
+                arguments[pair[0]] = pair[1]
+    return arguments
 
-app = Flask(__name__)
-api = restful.Api(app)
+@asyncio.coroutine
+def callBGG(request):
+    qstring = request.query_string
+    arguments = parseArgs(qstring, set(["username", "startdate", "enddate", "pagelimit"]))
+    if 'username' not in arguments.keys():
+        return web.Response(body="username argument is required".encode('utf-8'), status=400)
+
+    playHistory = yield from get_play_history(**arguments)
+    return web.Response(body=json.dumps(playHistory, ensure_ascii=False, indent=2).encode("utf-8"))
 
 
-class Index(restful.Resource):
-    def get(self):
-        requestParser = reqparse.RequestParser()
-        requestParser.add_argument("username", type=str, required=True, help="BoardGameGeek username is required", location="args")
-        requestParser.add_argument("startdate", type=str, help="date in YYYY-MM-DD format", location="args")
-        requestParser.add_argument("enddate", type=str, help="date in YYYY-MM-DD format", location="args")
-        requestParser.add_argument("pagelimit", type=int, help="limit the number of results returned by BGG", location="args")
+@asyncio.coroutine
+def init(loop):
+    app = web.Application(loop=loop)
+    app.router.add_route('GET', '/', callBGG)
 
-        args = requestParser.parse_args()
+    srv = yield from loop.create_server(app.make_handler(), '127.0.0.1', 8080)
+    print("Server started at http://127.0.0.1:8080")
+    return srv
 
-        bggCall = asyncio.async(get_play_history(args))
-
-        playHistory = mainLoop.run_until_complete(bggCall)
-        return playHistory
-
-api.add_resource(Index, "/")
-
-if __name__ == '__main__':
-    app.run(debug=True)
+loop = asyncio.get_event_loop()
+loop.run_until_complete(init(loop))
+loop.run_forever()
