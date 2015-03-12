@@ -45,7 +45,7 @@ class Executor(object):
     call addRequests() with a list of urls
     method will yield the collected etrees of the result.
     subsequent calls to addRequests() will return all new and old results in a list
-    call clearResults to empty the results list
+    create a new instance to clear the history
     """
     semaphore = asyncio.Semaphore(10)
     def __init__(self):
@@ -62,10 +62,6 @@ class Executor(object):
         if url in self.pending: return False
         if url in self.completed: return False
         return True
-
-    def clearResults(self):
-        self.completed = set()
-        self.results = []
 
     @asyncio.coroutine
     def addRequests(self, urls):
@@ -87,6 +83,11 @@ class Executor(object):
 
     @asyncio.coroutine
     def getXML(self, url):
+        """
+        BGG currently returns XML only.
+        Hopefully JSON will be an option at some point, then this method and its caller
+        will have to be redone (self.execute())
+        """
         yield from Executor.semaphore.acquire()
         response = yield from self.submitRequest(url)
         self.release()
@@ -96,6 +97,11 @@ class Executor(object):
 
     @asyncio.coroutine
     def release(self):
+        """
+        the semaphore is released a half second after the call is done which results
+        in a maximum of 20 calls per second.
+        I haven't timed the execution yet, but processing is pretty fast.
+        """
         yield from asyncio.sleep(0.5)
         Executor.semaphore.release()
 
@@ -113,13 +119,21 @@ class Executor(object):
             print(err)
 
 @asyncio.coroutine
-def print_result(**kwargs):
-    playRecord = yield from get_play_history(**kwargs)
-    print(playRecord)
-
-@asyncio.coroutine
 def get_play_history(**kwargs):
+    """
+    This is the main entry point for this module.
+
+    The function accepts a dictionary of arguments for the call:
+    username: bgg username, if the name doesn't match an existing account 
+        no results will be returned.  This is the only required value
+    startdate: YYYY-MM-DD formatted date string
+    enddate: YYYY-MM-DD formatted date string
+
+    There is currently no way to control pagination except with date ranges
+    """
     url = URLBuilder("https://www.boardgamegeek.com/xmlapi2/plays")
+    if kwargs.get("username") is None:
+        raise ValueError("username is required")
     url.addQueryArg("username", kwargs.get("username"))\
         .addQueryArg("mindate", kwargs.get("startdate"))\
         .addQueryArg("maxdate", kwargs.get("enddate"))
@@ -130,6 +144,8 @@ def get_play_history(**kwargs):
     # bgg api returns the total number of records and 100 records per page
     pageCount = math.ceil(int(first_page[0].attrib.get("total"))/100)
 
+    # new list with url strings for pages 2..n
+    # if pageCount is 1, then the list is empty
     last_pages = [url.addQueryArg("page", n).build() for n in range(2, pageCount + 1)]
     responseTrees = yield from executor.addRequests(last_pages)
 
@@ -137,6 +153,11 @@ def get_play_history(**kwargs):
     return playHistory
 
 def build_play_history(treelist):
+    """
+    Takes the xml tree of each page of bgg results and inserts them into a dictionary
+    The formatting of the xml seems a little odd to me and this function is very fragile
+    w.r.t. any changes in the upstream xml.  Fortunately bgg is really slow to change.
+    """
     playRecord = AggregatedPlays()
 
     for tree in treelist:
@@ -147,14 +168,16 @@ def build_play_history(treelist):
 
     return playRecord.records
 
-@asyncio.coroutine
-def get_single_page(url):
-    response = yield from aiohttp.request('GET', url)
-    xmlString = yield from response.read_and_close(decode=False)
-    return etree.fromstring(xmlString)
+# @asyncio.coroutine
+# def get_single_page(url):
+#     response = yield from aiohttp.request('GET', url)
+#     xmlString = yield from response.read_and_close(decode=False)
+#     return etree.fromstring(xmlString)
 
+def call_bgg(**kwargs):
+    mainLoop = asyncio.get_event_loop()
+    return mainLoop.run_until_complete(get_play_history(**kwargs))
 
 
 if __name__ == "__main__":
-    mainLoop = asyncio.get_event_loop()
-    mainLoop.run_until_complete(print_result(**{"username": "mikaeljp"}))
+    print(call_bgg(**{"username": "mikaeljp"}))
